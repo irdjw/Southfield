@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Darts League Manager</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+        
+        // Simple SVG Icons
+        const Shuffle = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>;
+        const Trophy = ({ className }) => <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+        const Users = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+        const Plus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+        const Trash2 = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
+        const Cloud = ({ className }) => <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>;
+
+        const DartsLeague = () => {
+            const [players, setPlayers] = useState(['Dave', 'Luke', 'Kelvin', 'Mark', 'Patch']);
+            const [newPlayerName, setNewPlayerName] = useState('');
+            const [mode, setMode] = useState('single');
+            const [fixtures, setFixtures] = useState([]);
+            const [results, setResults] = useState({});
+            const [activeTab, setActiveTab] = useState('fixtures');
+            const [loading, setLoading] = useState(true);
+            const [saveStatus, setSaveStatus] = useState('saved');
+
+            useEffect(() => {
+                const saved = localStorage.getItem('darts-league-data');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        setPlayers(parsed.players || ['Dave', 'Luke', 'Kelvin', 'Mark', 'Patch']);
+                        setMode(parsed.mode || 'single');
+                        setFixtures(parsed.fixtures || []);
+                        setResults(parsed.results || {});
+                    } catch (e) {}
+                }
+                setLoading(false);
+            }, []);
+
+            useEffect(() => {
+                if (!loading) {
+                    setSaveStatus('saving');
+                    localStorage.setItem('darts-league-data', JSON.stringify({ players, mode, fixtures, results }));
+                    setSaveStatus('saved');
+                }
+            }, [players, mode, fixtures, results, loading]);
+
+            const generateFixtures = () => mode === 'knockout' ? generateKnockoutBracket() : generateRoundRobin();
+
+            const generateRoundRobin = () => {
+                const matches = [];
+                for (let i = 0; i < players.length; i++) {
+                    for (let j = i + 1; j < players.length; j++) {
+                        matches.push({ p1: players[i], p2: players[j], id: `${i}-${j}` });
+                        if (mode === 'double') matches.push({ p1: players[j], p2: players[i], id: `${j}-${i}-rev` });
+                    }
+                }
+                setFixtures(matches.sort(() => Math.random() - 0.5).map((m, i) => ({ ...m, game: i + 1 })));
+                setResults({});
+            };
+
+            const generateKnockoutBracket = () => {
+                const size = Math.pow(2, Math.ceil(Math.log2(players.length)));
+                const shuffled = [...players].sort(() => Math.random() - 0.5);
+                const matches = [];
+                let idx = 0;
+                
+                for (let i = 0; i < size / 2; i++) {
+                    const p1 = idx < shuffled.length ? shuffled[idx++] : null;
+                    const p2 = idx < shuffled.length ? shuffled[idx++] : null;
+                    matches.push({ p1, p2: p2 || 'BYE', round: 1, match: i + 1, id: `r1-m${i + 1}`, winner: !p2 ? 'p1' : null });
+                }
+                
+                const rounds = Math.log2(size);
+                let count = size / 2;
+                for (let r = 2; r <= rounds; r++) {
+                    count /= 2;
+                    for (let m = 0; m < count; m++) {
+                        matches.push({ p1: null, p2: null, round: r, match: m + 1, id: `r${r}-m${m + 1}`, fromMatches: [`r${r-1}-m${m * 2 + 1}`, `r${r-1}-m${m * 2 + 2}`] });
+                    }
+                }
+                
+                if (size >= 4) {
+                    matches.push({ p1: null, p2: null, round: 'playoff', match: 1, id: 'playoff', isThirdPlace: true, fromMatches: [`r${rounds - 1}-m1`, `r${rounds - 1}-m2`] });
+                }
+                
+                setFixtures(matches);
+                setResults({});
+            };
+
+            const updateResult = (gameId, field, value) => {
+                setResults(prev => {
+                    const updated = { ...prev, [gameId]: { ...prev[gameId], [field]: value } };
+                    
+                    if (mode === 'knockout' && field === 'winner' && value) {
+                        const match = fixtures.find(f => f.id === gameId);
+                        if (match) {
+                            const winner = value === 'p1' ? match.p1 : match.p2;
+                            const loser = value === 'p1' ? match.p2 : match.p1;
+                            fixtures.filter(f => f.fromMatches?.includes(gameId)).forEach(next => {
+                                const pos = next.fromMatches.indexOf(gameId);
+                                const key = pos === 0 ? 'p1' : 'p2';
+                                setFixtures(prev => prev.map(f => f.id === next.id ? { ...f, [key]: next.isThirdPlace ? loser : winner } : f));
+                            });
+                        }
+                    }
+                    return updated;
+                });
+            };
+
+            const calcPoints = (gameId, pos) => {
+                const r = results[gameId];
+                if (!r) return 0;
+                let pts = 0;
+                if (r.winner === pos) pts += 3;
+                const co = parseInt(r[`${pos}Checkout`]) || 0;
+                if (co >= 100) pts += 2;
+                else if (co >= 50) pts += 1;
+                pts += (parseInt(r[`${pos}180s`]) || 0) * 3;
+                return pts;
+            };
+
+            const leaderboard = useMemo(() => {
+                const stats = {};
+                players.forEach(p => stats[p] = { player: p, wins: 0, totalPoints: 0, s180s: 0, highestCheckout: 0 });
+                fixtures.forEach(f => {
+                    const r = results[f.id];
+                    if (!r) return;
+                    if (r.winner === 'p1') stats[f.p1].wins++;
+                    stats[f.p1].totalPoints += calcPoints(f.id, 'p1');
+                    stats[f.p1].s180s += parseInt(r.p1180s) || 0;
+                    const p1co = parseInt(r.p1Checkout) || 0;
+                    if (p1co > stats[f.p1].highestCheckout) stats[f.p1].highestCheckout = p1co;
+                    if (r.winner === 'p2') stats[f.p2].wins++;
+                    stats[f.p2].totalPoints += calcPoints(f.id, 'p2');
+                    stats[f.p2].s180s += parseInt(r.p2180s) || 0;
+                    const p2co = parseInt(r.p2Checkout) || 0;
+                    if (p2co > stats[f.p2].highestCheckout) stats[f.p2].highestCheckout = p2co;
+                });
+                const max = Math.max(...Object.values(stats).map(s => s.highestCheckout), 0);
+                if (max > 0) Object.values(stats).forEach(s => { if (s.highestCheckout === max) { s.totalPoints++; s.hasCheckoutBonus = true; } });
+                return Object.values(stats).sort((a, b) => b.totalPoints - a.totalPoints);
+            }, [players, fixtures, results]);
+
+            if (loading) return <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center"><Cloud className="w-12 h-12 animate-pulse" /></div>;
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-4xl font-bold mb-2 text-center bg-gradient-to-r from-red-500 to-yellow-500 bg-clip-text text-transparent">Darts League Manager</h1>
+                        <p className="text-slate-400 text-center mb-8">Round Robin & Knockout Tournaments</p>
+                        
+                        <div className="bg-slate-800 rounded-lg p-6 mb-6 border border-slate-700">
+                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Users /> Setup</h2>
+                            
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold mb-2">Players (max 8)</label>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {players.map(p => (
+                                        <div key={p} className="bg-slate-700 px-3 py-2 rounded-lg flex items-center gap-2">
+                                            <span>{p}</span>
+                                            <button onClick={() => setPlayers(players.filter(x => x !== p))} className="text-red-400"><Trash2 /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {players.length < 8 && (
+                                    <div className="flex gap-2">
+                                        <input value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} onKeyPress={e => e.key === 'Enter' && newPlayerName.trim() && (setPlayers([...players, newPlayerName.trim()]), setNewPlayerName(''))} placeholder="New player" className="flex-1 bg-slate-700 rounded-lg px-3 py-2" />
+                                        <button onClick={() => newPlayerName.trim() && (setPlayers([...players, newPlayerName.trim()]), setNewPlayerName(''))} className="bg-green-600 px-4 py-2 rounded-lg flex items-center gap-2"><Plus /> Add</button>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold mb-2">Mode</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {['single', 'double', 'knockout'].map(m => (
+                                        <button key={m} onClick={() => setMode(m)} className={`px-4 py-2 rounded-lg ${mode === m ? 'bg-blue-600' : 'bg-slate-700'}`}>
+                                            {m === 'single' ? 'Single RR' : m === 'double' ? 'Double RR' : 'Knockout'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <button onClick={generateFixtures} disabled={players.length < 2} className="w-full bg-gradient-to-r from-red-600 to-orange-600 px-6 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
+                                <Shuffle /> {mode === 'knockout' ? 'Generate Bracket' : 'Generate Fixtures'}
+                            </button>
+                        </div>
+
+                        {fixtures.length > 0 && (
+                            <>
+                                <div className="flex gap-2 mb-4">
+                                    <button onClick={() => setActiveTab('fixtures')} className={`px-6 py-2 rounded-t-lg font-semibold ${activeTab === 'fixtures' ? 'bg-slate-800 border-t-2 border-red-500' : 'bg-slate-700'}`}>
+                                        {mode === 'knockout' ? 'Bracket' : 'Fixtures'}
+                                    </button>
+                                    {mode !== 'knockout' && (
+                                        <button onClick={() => setActiveTab('leaderboard')} className={`px-6 py-2 rounded-t-lg font-semibold flex items-center gap-2 ${activeTab === 'leaderboard' ? 'bg-slate-800 border-t-2 border-yellow-500' : 'bg-slate-700'}`}>
+                                            <Trophy /> Leaderboard
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+                                    {activeTab === 'fixtures' && mode === 'knockout' ? (
+                                        <div className="space-y-6">
+                                            {(() => {
+                                                const rounds = Math.log2(Math.pow(2, Math.ceil(Math.log2(players.length))));
+                                                const names = ['Round 1', 'Quarter Finals', 'Semi Finals', 'Final'];
+                                                const groups = [];
+                                                for (let r = 1; r <= rounds; r++) {
+                                                    const m = fixtures.filter(f => f.round === r);
+                                                    if (m.length) groups.push({ name: names[r - 1] || `Round ${r}`, matches: m });
+                                                }
+                                                const playoff = fixtures.filter(f => f.isThirdPlace);
+                                                if (playoff.length) groups.push({ name: '3rd Place', matches: playoff });
+                                                return groups.map(g => (
+                                                    <div key={g.name} className="border-b border-slate-700 pb-4">
+                                                        <h3 className="text-lg font-bold mb-3 text-yellow-400">{g.name}</h3>
+                                                        <div className="space-y-3">
+                                                            {g.matches.map(f => {
+                                                                const r = results[f.id] || {};
+                                                                return (
+                                                                    <div key={f.id} className="bg-slate-700 rounded-lg p-4">
+                                                                        <div className="grid grid-cols-3 gap-4 mb-3">
+                                                                            <div className={`text-center p-2 rounded ${r.winner === 'p1' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p1 || 'TBD'}</div>
+                                                                            <div className="flex items-center justify-center">vs</div>
+                                                                            <div className={`text-center p-2 rounded ${r.winner === 'p2' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p2 || 'TBD'}</div>
+                                                                        </div>
+                                                                        {f.p1 && f.p2 && f.p2 !== 'BYE' ? (
+                                                                            <div className="flex gap-2">
+                                                                                <button onClick={() => updateResult(f.id, 'winner', 'p1')} className={`flex-1 py-2 rounded-lg ${r.winner === 'p1' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p1} Wins</button>
+                                                                                <button onClick={() => updateResult(f.id, 'winner', 'p2')} className={`flex-1 py-2 rounded-lg ${r.winner === 'p2' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p2} Wins</button>
+                                                                            </div>
+                                                                        ) : f.p2 === 'BYE' && <div className="text-center text-slate-400 text-sm italic">{f.p1} advances (bye)</div>}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ));
+                                            })()}
+                                        </div>
+                                    ) : activeTab === 'fixtures' ? (
+                                        <div className="space-y-4">
+                                            {fixtures.map(f => {
+                                                const r = results[f.id] || {};
+                                                return (
+                                                    <div key={f.id} className="bg-slate-700 rounded-lg p-4">
+                                                        <div className="flex justify-between mb-3">
+                                                            <span className="font-semibold">Game {f.game}</span>
+                                                            <span className="text-xs">{mode === 'double' ? 'Double RR' : 'Single RR'}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-4 mb-4">
+                                                            <div className="text-center"><div className={`font-bold ${r.winner === 'p1' ? 'text-green-400' : ''}`}>{f.p1}</div><div className="text-sm text-slate-400">{calcPoints(f.id, 'p1')} pts</div></div>
+                                                            <div className="flex items-center justify-center text-2xl">vs</div>
+                                                            <div className="text-center"><div className={`font-bold ${r.winner === 'p2' ? 'text-green-400' : ''}`}>{f.p2}</div><div className="text-sm text-slate-400">{calcPoints(f.id, 'p2')} pts</div></div>
+                                                        </div>
+                                                        <div className="flex gap-2 mb-3">
+                                                            <button onClick={() => updateResult(f.id, 'winner', 'p1')} className={`flex-1 py-2 rounded-lg ${r.winner === 'p1' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p1}</button>
+                                                            <button onClick={() => updateResult(f.id, 'winner', 'p2')} className={`flex-1 py-2 rounded-lg ${r.winner === 'p2' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p2}</button>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                                            <div><label className="text-xs text-slate-400">{f.p1} CO</label><input type="number" value={r.p1Checkout || ''} onChange={e => updateResult(f.id, 'p1Checkout', e.target.value)} className="w-full bg-slate-600 rounded px-2 py-1" /></div>
+                                                            <div><label className="text-xs text-slate-400">{f.p2} CO</label><input type="number" value={r.p2Checkout || ''} onChange={e => updateResult(f.id, 'p2Checkout', e.target.value)} className="w-full bg-slate-600 rounded px-2 py-1" /></div>
+                                                            <div><label className="text-xs text-slate-400">{f.p1} 180s</label><input type="number" value={r.p1180s || ''} onChange={e => updateResult(f.id, 'p1180s', e.target.value)} className="w-full bg-slate-600 rounded px-2 py-1" /></div>
+                                                            <div><label className="text-xs text-slate-400">{f.p2} 180s</label><input type="number" value={r.p2180s || ''} onChange={e => updateResult(f.id, 'p2180s', e.target.value)} className="w-full bg-slate-600 rounded px-2 py-1" /></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <table className="w-full">
+                                            <thead><tr className="border-b border-slate-600"><th className="text-left py-3 px-2">Rank</th><th className="text-left py-3 px-2">Player</th><th className="text-center py-3 px-2">Wins</th><th className="text-center py-3 px-2">Points</th><th className="text-center py-3 px-2">180s</th><th className="text-center py-3 px-2">High CO</th></tr></thead>
+                                            <tbody>
+                                                {leaderboard.map((s, i) => (
+                                                    <tr key={s.player} className={`border-b border-slate-700 ${i === 0 ? 'bg-yellow-600/10' : ''}`}>
+                                                        <td className="py-3 px-2">{i === 0 ? <Trophy className="w-5 h-5 text-yellow-500 inline" /> : i + 1}</td>
+                                                        <td className="py-3 px-2 font-semibold">{s.player}</td>
+                                                        <td className="text-center py-3 px-2">{s.wins}</td>
+                                                        <td className="text-center py-3 px-2 font-bold text-green-400">{s.totalPoints}</td>
+                                                        <td className="text-center py-3 px-2">{s.s180s}</td>
+                                                        <td className="text-center py-3 px-2">{s.highestCheckout || '-'}{s.hasCheckoutBonus && <span className="ml-1 text-yellow-400">★</span>}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<DartsLeague />, document.getElementById('root'));
+    </script>
+</body>
+</html>
