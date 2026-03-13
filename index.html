@@ -77,6 +77,7 @@
                 
                 for (let i = 0; i < size / 2; i++) {
                     const p1 = idx < shuffled.length ? shuffled[idx++] : null;
+                    if (!p1) break;
                     const p2 = idx < shuffled.length ? shuffled[idx++] : null;
                     matches.push({ p1, p2: p2 || 'BYE', round: 1, match: i + 1, id: `r1-m${i + 1}`, winner: !p2 ? 'p1' : null });
                 }
@@ -136,16 +137,20 @@
                 fixtures.forEach(f => {
                     const r = results[f.id];
                     if (!r) return;
-                    if (r.winner === 'p1') stats[f.p1].wins++;
-                    stats[f.p1].totalPoints += calcPoints(f.id, 'p1');
-                    stats[f.p1].s180s += parseInt(r.p1180s) || 0;
-                    const p1co = parseInt(r.p1Checkout) || 0;
-                    if (p1co > stats[f.p1].highestCheckout) stats[f.p1].highestCheckout = p1co;
-                    if (r.winner === 'p2') stats[f.p2].wins++;
-                    stats[f.p2].totalPoints += calcPoints(f.id, 'p2');
-                    stats[f.p2].s180s += parseInt(r.p2180s) || 0;
-                    const p2co = parseInt(r.p2Checkout) || 0;
-                    if (p2co > stats[f.p2].highestCheckout) stats[f.p2].highestCheckout = p2co;
+                    if (f.p1 && stats[f.p1]) {
+                        if (r.winner === 'p1') stats[f.p1].wins++;
+                        stats[f.p1].totalPoints += calcPoints(f.id, 'p1');
+                        stats[f.p1].s180s += parseInt(r.p1180s) || 0;
+                        const p1co = parseInt(r.p1Checkout) || 0;
+                        if (p1co > stats[f.p1].highestCheckout) stats[f.p1].highestCheckout = p1co;
+                    }
+                    if (f.p2 && stats[f.p2]) {
+                        if (r.winner === 'p2') stats[f.p2].wins++;
+                        stats[f.p2].totalPoints += calcPoints(f.id, 'p2');
+                        stats[f.p2].s180s += parseInt(r.p2180s) || 0;
+                        const p2co = parseInt(r.p2Checkout) || 0;
+                        if (p2co > stats[f.p2].highestCheckout) stats[f.p2].highestCheckout = p2co;
+                    }
                 });
                 const max = Math.max(...Object.values(stats).map(s => s.highestCheckout), 0);
                 if (max > 0) Object.values(stats).forEach(s => { if (s.highestCheckout === max) { s.totalPoints++; s.hasCheckoutBonus = true; } });
