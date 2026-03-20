@@ -93,24 +93,13 @@
                 setResults({});
             };
 
-            // Propagates a winner from srcId through subsequent rounds.
-            // Detects ghost slots (fromMatch that doesn't exist) and auto-advances
-            // the real player, cascading upward until the bracket is fully resolved.
             const propagateKnockoutWinner = (allFixtures, srcId, winnerName, loserName) => {
                 const fs = allFixtures.map(f => ({ ...f }));
                 const propagate = (fromId, w, l) => {
                     fs.filter(f => f.fromMatches?.includes(fromId)).forEach(next => {
                         const pos = next.fromMatches.indexOf(fromId);
                         const key = pos === 0 ? 'p1' : 'p2';
-                        const otherKey = key === 'p1' ? 'p2' : 'p1';
-                        const otherFromId = next.fromMatches[pos === 0 ? 1 : 0];
                         next[key] = next.isThirdPlace ? l : w;
-                        // If the other source slot is a ghost, this player auto-advances
-                        const otherExists = fs.some(f => f.id === otherFromId);
-                        if (!next.isThirdPlace && !otherExists && next[otherKey] === null) {
-                            next.winner = key;
-                            propagate(next.id, next[key], null);
-                        }
                     });
                 };
                 propagate(srcId, winnerName, loserName);
@@ -118,42 +107,44 @@
             };
 
             const generateKnockoutBracket = () => {
-                const size = Math.pow(2, Math.ceil(Math.log2(players.length)));
                 const shuffled = [...players].sort(() => Math.random() - 0.5);
-                let matches = [];
-                let idx = 0;
+                // Scale bracket DOWN to nearest power of 2, use play-in qualifiers for extras
+                const B = Math.pow(2, Math.floor(Math.log2(Math.max(players.length, 2))));
+                const Q = players.length - B; // number of qualifying matches needed
 
-                for (let i = 0; i < size / 2; i++) {
-                    const p1 = idx < shuffled.length ? shuffled[idx++] : null;
-                    if (!p1) break;
-                    const p2 = idx < shuffled.length ? shuffled[idx++] : null;
-                    matches.push({ p1, p2: p2 || 'BYE', round: 1, match: i + 1, id: `r1-m${i + 1}`, winner: !p2 ? 'p1' : null });
+                const directPlayers = shuffled.slice(0, B - Q); // skip qualifying
+                const qualPlayers   = shuffled.slice(B - Q);    // 2Q players enter via qualifiers
+
+                let matches = [];
+
+                // Qualifying round
+                for (let i = 0; i < Q; i++) {
+                    matches.push({ id: `q-m${i + 1}`, p1: qualPlayers[i * 2], p2: qualPlayers[i * 2 + 1], round: 'qualifying', match: i + 1 });
                 }
 
-                const rounds = Math.log2(size);
-                let count = size / 2;
-                for (let r = 2; r <= rounds; r++) {
+                // Round 1 of main bracket — fill slots from direct players then qualifier winners
+                let directIdx = 0, qualIdx = 0;
+                for (let m = 0; m < B / 2; m++) {
+                    let p1 = null, fm1 = null, p2 = null, fm2 = null;
+                    if (directIdx < directPlayers.length) { p1 = directPlayers[directIdx++]; } else { fm1 = `q-m${++qualIdx}`; }
+                    if (directIdx < directPlayers.length) { p2 = directPlayers[directIdx++]; } else { fm2 = `q-m${++qualIdx}`; }
+                    matches.push({ id: `r1-m${m + 1}`, p1, p2, round: 1, match: m + 1, ...((fm1 || fm2) && { fromMatches: [fm1, fm2] }) });
+                }
+
+                // Subsequent rounds
+                const totalRounds = Math.log2(B);
+                let count = B / 2;
+                for (let r = 2; r <= totalRounds; r++) {
                     count /= 2;
                     for (let m = 0; m < count; m++) {
                         matches.push({ p1: null, p2: null, round: r, match: m + 1, id: `r${r}-m${m + 1}`, fromMatches: [`r${r-1}-m${m * 2 + 1}`, `r${r-1}-m${m * 2 + 2}`] });
                     }
                 }
 
-                // Add 3rd place only when both semi-finals have real source matches on both sides
-                const matchIds = new Set(matches.map(m => m.id));
-                const semiIds = [`r${rounds - 1}-m1`, `r${rounds - 1}-m2`];
-                const semisContestable = rounds >= 2 && semiIds.every(id => {
-                    const semi = matches.find(m => m.id === id);
-                    return semi && (!semi.fromMatches || semi.fromMatches.every(fmId => matchIds.has(fmId)));
-                });
-                if (semisContestable) {
-                    matches.push({ p1: null, p2: null, round: 'playoff', match: 1, id: 'playoff', isThirdPlace: true, fromMatches: semiIds });
+                // 3rd place whenever there are semis (guaranteed real matches with play-in system)
+                if (totalRounds >= 2) {
+                    matches.push({ p1: null, p2: null, round: 'playoff', match: 1, id: 'playoff', isThirdPlace: true, fromMatches: [`r${totalRounds - 1}-m1`, `r${totalRounds - 1}-m2`] });
                 }
-
-                // Propagate R1 byes (and any cascading ghost-slot auto-advances) immediately
-                matches.filter(m => m.round === 1 && m.winner === 'p1').forEach(byeMatch => {
-                    matches = propagateKnockoutWinner(matches, byeMatch.id, byeMatch.p1, null);
-                });
 
                 setFixtures(matches);
                 setCollapsedGames(new Set());
@@ -272,12 +263,20 @@
                                     {activeTab === 'fixtures' && mode === 'knockout' ? (
                                         <div className="space-y-6">
                                             {(() => {
-                                                const rounds = Math.log2(Math.pow(2, Math.ceil(Math.log2(players.length))));
-                                                const names = ['Round 1', 'Quarter Finals', 'Semi Finals', 'Final'];
+                                                const B = Math.pow(2, Math.floor(Math.log2(Math.max(players.length, 2))));
+                                                const totalRounds = Math.log2(B);
+                                                const getRoundName = r => {
+                                                    const d = totalRounds - r;
+                                                    if (d === 0) return 'Final';
+                                                    if (d === 1) return 'Semi-Finals';
+                                                    if (d === 2) return 'Quarter-Finals';
+                                                    return `Round ${r}`;
+                                                };
                                                 const groups = [];
-                                                for (let r = 1; r <= rounds; r++) {
+                                                if (fixtures.some(f => f.round === 'qualifying')) groups.push({ name: 'Qualifying', matches: fixtures.filter(f => f.round === 'qualifying') });
+                                                for (let r = 1; r <= totalRounds; r++) {
                                                     const m = fixtures.filter(f => f.round === r);
-                                                    if (m.length) groups.push({ name: names[r - 1] || `Round ${r}`, matches: m });
+                                                    if (m.length) groups.push({ name: getRoundName(r), matches: m });
                                                 }
                                                 const playoff = fixtures.filter(f => f.isThirdPlace);
                                                 if (playoff.length) groups.push({ name: '3rd Place', matches: playoff });
@@ -288,7 +287,7 @@
                                                             {g.matches.map(f => {
                                                                 const r = results[f.id] || {};
                                                                 const isCollapsed = collapsedGames.has(f.id);
-                                                                const effectiveWinner = r.winner || f.winner;
+                                                                const effectiveWinner = r.winner;
                                                                 const winnerName = effectiveWinner ? (effectiveWinner === 'p1' ? f.p1 : f.p2) : null;
                                                                 return (
                                                                     <div key={f.id} className="bg-slate-700 rounded-lg overflow-hidden">
@@ -305,9 +304,7 @@
                                                                         </button>
                                                                         {!isCollapsed && (
                                                                             <div className="px-4 pb-4 border-t border-slate-600 pt-3">
-                                                                                {effectiveWinner && (!f.p2 || f.p2 === 'BYE') ? (
-                                                                                    <div className="text-center text-slate-400 text-sm italic">{effectiveWinner === 'p1' ? f.p1 : f.p2} advances (bye)</div>
-                                                                                ) : f.p1 && f.p2 && f.p2 !== 'BYE' ? (
+                                                                                {f.p1 && f.p2 ? (
                                                                                     <div className="flex gap-2">
                                                                                         <button onClick={() => updateResult(f.id, 'winner', 'p1')} className={`flex-1 py-2 rounded-lg ${r.winner === 'p1' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p1} Wins</button>
                                                                                         <button onClick={() => updateResult(f.id, 'winner', 'p2')} className={`flex-1 py-2 rounded-lg ${r.winner === 'p2' ? 'bg-green-600' : 'bg-slate-600'}`}>{f.p2} Wins</button>
